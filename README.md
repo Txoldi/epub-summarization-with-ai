@@ -36,70 +36,83 @@ Clone the repository:
 ```bash
 git clone https://github.com/Txoldi/epub-summarization-with-ai.git
 cd epub-summarization-with-ai
+```
 
-### Create a virtual environment (recommended)
+Create a virtual environment (recommended)
+
+```bash
 python -m venv .venv
 source .venv/bin/activate   # Linux / macOS
 .venv\Scripts\activate      # Windows
+```
 
-pip install -r requirements.txt # Install dependencies
+Install dependencies
+
+```bash
+pip install -r requirements.txt
+```
 
 ## Ollama setup
 
-- Download and install Ollama ()
-- Make sure Ollama is running => Ollama serve
-- Pull the model you want to use => Ollama pull qwen2.5:3b
+- Download and install Ollama (https://ollama.com/download/windows)
+- Make sure Ollama is running => `Ollama serve`
+- Pull the model you want to use => `Ollama pull qwen2.5:3b`
 
 ### GPU acceleration on Windows (important)
 
 On Windows, Ollama uses Vulkan for GPU acceleration. Enable it before use:
 
-setx OLLAMA_VULKAN 1
+`setx OLLAMA_VULKAN 1`
 
-Then start Ollama
+Then start Ollama:
 
-ollama serve
+`ollama serve`
 
 Verify usage with the command below:
 
-nvidia-smi -l 1
+`nvidia-smi -l 1`
 
 ## Usage
 
 - Basic usage:
 
-python -m main "input.epub" "output.epub"
+`python -m main "input.epub" "output.epub"`
 
 - Full command with all input options:
 
+```bash
 python -m main input.epub output.epub \
   --model qwen2.5:3b \
   --prompt summarizr_chapter_en_v2 \
   --min-words 300 \
   --compress-chapters \
   --logfile
+```
 
 - Command line arguments:
 
-input_epub: Path to the input EPUB file
-output_epub: Path to the generated summary EPUB
---model: Ollama model to use (default: qwen2.5:3b)
---prompt: Prompt filename (without .txt) located in prompts/
---min-words: Minimum word count for a chapter to be summarized
---compress-chapters: Compress chapter text before summarization
---logfile: Write a detailed logfile next to the input EPUB
+**input_epub**: Path to the input EPUB file
+**output_epub**: Path to the generated summary EPUB
+**--model**: Ollama model to use (default: qwen2.5:3b)
+**--prompt**: Prompt filename (without .txt) located in prompts/
+**--min-words**: Minimum word count for a chapter to be summarized
+**--compress-chapters**: Compress chapter text before summarization
+**--logfile**: Write a detailed logfile next to the input EPUB
+
 
 ## Prompts
 
 Prompts are stored as plain text files in the prompts/ directory. This model allows playing around
 with different prompts and easily compare the results. 
-
+```bash
 prompts/
   summarize_chapter_en_v2.txt
   summarize_chapter_en_v3.txt
   summarize_and_comment_en_v1.txt
+```
 
 Prompt files use Python str.format placeholders:
+
 
 Title of the chapter: {title}
 
