@@ -90,7 +90,7 @@ python -m main input.epub output.epub \
 ```
 
 - Command line arguments:
-
+```
 **input_epub**: Path to the input EPUB file
 **output_epub**: Path to the generated summary EPUB
 **--model**: Ollama model to use (default: qwen2.5:3b)
@@ -98,7 +98,7 @@ python -m main input.epub output.epub \
 **--min-words**: Minimum word count for a chapter to be summarized
 **--compress-chapters**: Compress chapter text before summarization
 **--logfile**: Write a detailed logfile next to the input EPUB
-
+```
 
 ## Prompts
 

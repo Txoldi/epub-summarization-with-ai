@@ -2,7 +2,6 @@
 from __future__ import annotations
 
 from ebooklib import epub
-import re
 import logging
 
 logger = logging.getLogger(__name__)
