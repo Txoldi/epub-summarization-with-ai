@@ -1,0 +1,14 @@
+Summarise the text in the chapter: "{title}".
+
+Return exactly this the format below:
+SUMMARY: 6 or 7 sentences. Present the main topics and concepts addressed in the chapter. Make sure the summary in understandable and cohesive.
+BULLETS:
+- 8-12 bullets(máx. ~14 words each).
+KEY WORDS: comma-separated list (names, dates, concepts).
+
+Rules:
+- Don't make up or infer anything.
+- If not enough information is presented, say it explicitly. 
+
+Text:
+{text}

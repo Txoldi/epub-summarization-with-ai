@@ -1,0 +1,14 @@
+Resume fielmente en español el capítulo: "{title}".
+
+Devuelve EXACTAMENTE este formato:
+RESUMEN: 6 o 7 frases. Desarrolla mínimamente los conceptos que se abordan para que sea comprensible.
+VIÑETAS:
+- 8-12 viñetas (máx. ~14 palabras cada una).
+PALABRAS CLAVE: lista separada por comas (nombres propios, lugares, fechas, conceptos).
+
+Reglas:
+- No inventes detalles.
+- Si falta información en el texto, dilo explícitamente (p. ej., "no se especifica").
+
+Texto:
+{text}
