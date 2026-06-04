@@ -4,6 +4,7 @@ from __future__ import annotations
 import sys
 import argparse
 import logging
+import time
 from pathlib import Path 
 
 from extract import extract_chapters
@@ -45,6 +46,13 @@ def configure_logging(write_file: bool, input_epub: str) -> None:
         set_file_logger(logger, file_name_no_ext)
 
 
+def infer_output_language(prompt_name: str) -> str:
+    normalized = prompt_name.lower()
+    if normalized.startswith("resumir") or "_es" in normalized or normalized.endswith("_es"):
+        return "es"
+    return "en"
+
+
 def main():
     if len(sys.argv) < 2:
         print("Usage: python main.py <input_epub> <output_epub>")
@@ -58,6 +66,7 @@ def main():
     ap.add_argument("--min-words", type=int, help="The minimum number of words for a chapter to be summarized", default=300, required=False)
     ap.add_argument("--compress-chapters", help="Whether to compress chapters to speed up inference", action="store_true", required=False)
     ap.add_argument("--logfile", help="Whether to create a logfile", action="store_true", required=False)
+    ap.add_argument("--language", choices=["auto", "en", "es"], default="auto", help="Output EPUB language and labels (default: infer from prompt name)")
     args = ap.parse_args()
 
     input_path = Path(args.input_epub)
@@ -78,13 +87,29 @@ def main():
     # Load prompt template once and use for all chapters
     prompt_template = load_prompt_template(args.prompt)
     logger.info("Loaded prompt template: %s", args.prompt)
+    output_language = infer_output_language(args.prompt) if args.language == "auto" else args.language
+    logger.info("Output language: %s", output_language)
 
-    for ch in chapters:
-        summary = summarize_chapter(ch.title, ch.text, cache=cache, compress=args.compress_chapters, model=args.model, prompt_template=prompt_template)
+    total_chapters = len(chapters)
+    start_time = time.monotonic()
+    for idx, ch in enumerate(chapters, start=1):
+        logger.info("Processing chapter %d/%d: %s", idx, total_chapters, ch.title)
+        summary = summarize_chapter(
+            ch.title,
+            ch.text,
+            cache=cache,
+            compress=args.compress_chapters,
+            model=args.model,
+            prompt_template=prompt_template,
+            chapter_number=idx,
+            total_chapters=total_chapters,
+        )
         chapter_summaries.append({"title": ch.title, "summary": summary})
+        elapsed = time.monotonic() - start_time
+        logger.info("Progress: %d/%d chapters complete (elapsed %.1fs)", idx, total_chapters, elapsed)
 
     logger.info("Packing output epub...")
-    build_summary_epub(metadata, chapter_summaries, args.output_epub)
+    build_summary_epub(metadata, chapter_summaries, args.output_epub, language=output_language)
     output_path = Path(args.output_epub)
     if output_path.exists():
         logger.info(f"{args.output_epub} successfully written")
