@@ -51,9 +51,9 @@ NON_CHAPTER_PATH_HINTS = [
     "nav", "ncx",
     "copyright",
     "preface", "foreword", "introduction", "prologue", "epilogue",
-    "acknowledg", "agrade", "epigraph", "epigrafe", "epígrafe"
+    "acknowledg", "agrade", "epigraph", "epigrafe", "epígrafe",
     "bibliograph", "bibliograf",
-    "notes", "notas", "dedication"
+    "notes", "notas", "dedication",
     "appendix", "apendice", "apéndice", "anexo",
     "glossary", "glosario", "reconocimientos"
 ]

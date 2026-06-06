@@ -2,11 +2,27 @@
 from __future__ import annotations
 
 from ebooklib import epub
+from html import escape
 import logging
 import re
 import html
 
 logger = logging.getLogger(__name__)
+
+OUTPUT_LABELS = {
+    "en": {
+        "suffix": "Summary",
+        "intro_title": "Overview",
+        "intro_heading": "Summaries",
+        "book_label": "Book",
+    },
+    "es": {
+        "suffix": "Resumen",
+        "intro_title": "Vista general",
+        "intro_heading": "Resúmenes",
+        "book_label": "Libro",
+    },
+}
 
 def summary_to_html(summary_text: str) -> str:
     """
@@ -129,9 +145,16 @@ def summary_to_html(summary_text: str) -> str:
     close_lists()
     return "\n".join(html_out)
 
-def build_summary_epub(metadata: dict, chapter_summaries: list[dict], out_path: str):
+def build_summary_epub(
+    metadata: dict,
+    chapter_summaries: list[dict],
+    out_path: str,
+    *,
+    language: str = "en",
+):
     book = epub.EpubBook()
 
+    labels = OUTPUT_LABELS.get(language, OUTPUT_LABELS["en"])
     title = metadata.get("title") or "Untitled"
     authors = metadata.get("authors") or []
     authors_str = ", ".join(authors) if authors else ""
@@ -150,6 +173,7 @@ def build_summary_epub(metadata: dict, chapter_summaries: list[dict], out_path: 
 
     for i, ch in enumerate(chapter_summaries, start=1):
         chap_title = ch["title"]
+        escaped_chap_title = escape(chap_title)
         html = summary_to_html(ch["summary"])
 
         page = epub.EpubHtml(
@@ -157,7 +181,7 @@ def build_summary_epub(metadata: dict, chapter_summaries: list[dict], out_path: 
             file_name=f"summary_{i:03d}.xhtml",
             lang="es",
         )
-        page.content = f"<h2>{chap_title}</h2>\n{html}"
+        page.content = f"<h2>{escaped_chap_title}</h2>\n{html}"
         book.add_item(page)
 
         toc.append(epub.Link(page.file_name, chap_title, f"sum_{i:03d}"))

@@ -89,9 +89,38 @@ def call_llm(model: str, prompt: str, *, num_predict: int = 280) -> str:
             "top_p": 0.9,
         },
     }
-    r = requests.post(OLLAMA_URL, json=payload, timeout=(10, 600))
-    r.raise_for_status()
-    return r.json()["response"].strip()
+    try:
+        r = requests.post(OLLAMA_URL, json=payload, timeout=(10, 600))
+    except requests.exceptions.ConnectionError as e:
+        raise RuntimeError(
+            f"Ollama is unreachable at {OLLAMA_URL}. Make sure Ollama is running with `ollama serve`."
+        ) from e
+    except requests.exceptions.Timeout as e:
+        raise RuntimeError(
+            f"Ollama timed out while generating with model '{model}'. Try again, use a smaller model, or enable --compress-chapters."
+        ) from e
+
+    try:
+        r.raise_for_status()
+    except requests.exceptions.HTTPError as e:
+        detail = r.text.strip()
+        message = f"Ollama returned HTTP {r.status_code} for model '{model}'."
+        if r.status_code == 404:
+            message += f" The model may be missing; try `ollama pull {model}`."
+        if detail:
+            message += f" Response: {detail[:500]}"
+        raise RuntimeError(message) from e
+
+    try:
+        data = r.json()
+    except ValueError as e:
+        raise RuntimeError("Ollama returned a non-JSON response.") from e
+
+    response = data.get("response")
+    if response is None:
+        raise RuntimeError(f"Ollama response did not include a 'response' field: {data}")
+
+    return response.strip()
 
 def call_llm_with_retry(model: str, prompt: str, *, num_predict: int = 280, max_retries: int = 4, base_sleep: float = 1.5) -> str:
     last_err = None
@@ -100,7 +129,16 @@ def call_llm_with_retry(model: str, prompt: str, *, num_predict: int = 280, max_
             return call_llm(model, prompt, num_predict=num_predict)
         except Exception as e:
             last_err = e
-            time.sleep(base_sleep * (2 ** attempt))
+            if attempt < max_retries - 1:
+                sleep_for = base_sleep * (2 ** attempt)
+                logger.warning(
+                    "LLM call failed on attempt %d/%d; retrying in %.1fs: %s",
+                    attempt + 1,
+                    max_retries,
+                    sleep_for,
+                    e,
+                )
+                time.sleep(sleep_for)
     raise RuntimeError(f"LLM call failed after {max_retries} retries: {last_err}") from last_err
 
 # ---------- Chapter compression (one call per chapter) ----------
@@ -170,27 +208,53 @@ def compress_chapter(
 
 # ---------- Summarization logic (one call per chapter) ----------
 
-def summarize_chapter(title: str, text: str, *, compress: bool, cache: DiskCache, model: str, prompt_template: str) -> str:
+def summarize_chapter(
+    title: str,
+    text: str,
+    *,
+    compress: bool,
+    cache: DiskCache,
+    model: str,
+    prompt_template: str,
+    chapter_number: Optional[int] = None,
+    total_chapters: Optional[int] = None,
+) -> str:
     template_hash = stable_hash(prompt_template)
     # Cache keyed by model + prompt template hash (prompt content) + chapter title + chapter text
     key = stable_hash(f"{model}|{template_hash}|{title}|{stable_hash(text)}")
+    chapter_label = (
+        f"chapter {chapter_number}/{total_chapters}"
+        if chapter_number is not None and total_chapters is not None
+        else "chapter"
+    )
 
     cached = cache.get(key)
     if cached:
+        logger.info("Cache hit for %s: %s", chapter_label, title)
         return cached
     
+    logger.info("Cache miss for %s: %s", chapter_label, title)
+    start_time = time.monotonic()
     wc_full = len(text.split())
 
     if compress:
         text = compress_chapter(text)
         wc_comp = len(text.split())
-        logger.info(f"Summarizing '{title}' (compressed {wc_comp} words from {wc_full})...")
+        logger.info(
+            "Summarizing %s '%s' (compressed %d words from %d)...",
+            chapter_label,
+            title,
+            wc_comp,
+            wc_full,
+        )
     else:
-        logger.info(f"Summarizing '{title}' full text ({wc_full} words)...")
+        logger.info("Summarizing %s '%s' full text (%d words)...", chapter_label, title, wc_full)
 
     prompt = render_prompt(prompt_template, title=title, text=text)
 
     # Slightly higher output cap for the final chapter summary
     summary = call_llm_with_retry(model, prompt, num_predict=360)
     cache.set(key, summary)
+    elapsed = time.monotonic() - start_time
+    logger.info("Finished %s in %.1fs: %s", chapter_label, elapsed, title)
     return summary
