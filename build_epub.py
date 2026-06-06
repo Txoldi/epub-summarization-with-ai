@@ -4,6 +4,8 @@ from __future__ import annotations
 from ebooklib import epub
 from html import escape
 import logging
+import re
+import html
 
 logger = logging.getLogger(__name__)
 
@@ -23,33 +25,125 @@ OUTPUT_LABELS = {
 }
 
 def summary_to_html(summary_text: str) -> str:
-    # Very light formatting: bullets -> <li>, keep everything else <p>
+    """
+    Convert a lightweight Markdown-ish summary into EPUB-friendly HTML.
+    """
     lines = [ln.rstrip() for ln in summary_text.splitlines()]
-    html = []
+    html_out: list[str] = []
     in_ul = False
+    in_ol = False
+    in_nested_ul = False
 
-    def close_ul():
-        nonlocal in_ul
+    def close_nested_ul_if_open():
+        nonlocal in_nested_ul
+        if in_nested_ul:
+            html_out.append("</ul>")
+            in_nested_ul = False
+
+    def close_lists():
+        nonlocal in_ul, in_ol, in_nested_ul
+        close_nested_ul_if_open()
         if in_ul:
-            html.append("</ul>")
+            html_out.append("</ul>")
             in_ul = False
+        if in_ol:
+            # if we opened a nested UL, it was already closed above
+            html_out.append("</ol>")
+            in_ol = False
+    
+    def inline_format(s: str) -> str:
+        # Escape first prevent summaries from breaking XHTML
+        s = html.escape(s)
 
-    for ln in lines:
-        if not ln.strip():
-            close_ul()
+        # Bold
+        s = re.sub(r"\*\*(.+?)\*\*", r"<strong>\1</strong>", s)
+
+        # Italic
+        s = re.sub(r"(?<!\*)\*(?!\s)(.+?)(?<!\s)\*(?!\*)", r"<em>\1</em>", s)
+
+        return s
+
+    for raw in lines:
+        ln = raw.strip()
+
+        if not ln:
+            continue
+        
+        # Headings: #, ##, ###
+        m = re.match(r"^(#{1,6})\s+(.*)$", ln)
+        if m:
+            close_lists()
+            level = len(m.group(1))
+            text = inline_format(m.group(2).strip())
+            html_out.append(f"<h{level}>{text}</h{level}>")
             continue
 
-        if ln.strip().startswith("- "):
-            if not in_ul:
-                html.append("<ul>")
-                in_ul = True
-            html.append(f"<li>{escape(ln.strip()[2:])}</li>")
-        else:
-            close_ul()
-            html.append(f"<p>{escape(ln)}</p>")
+        # Ordered list: "1. item"
+        m = re.match(r"^(\d+)\.\s+(.*)$", ln)
+        if m:
+            if in_ul:
+                html_out.append("</ul>")
+                in_ul = False
+            
+            close_nested_ul_if_open()
 
-    close_ul()
-    return "\n".join(html)
+            if not in_ol:
+                html_out.append("<ol>")
+                in_ol = True
+
+            item = inline_format(m.group(2).strip())
+            html_out.append(f"<li>{item}</li>")
+            continue
+
+        # Unordered list item: "- text"
+        if ln.startswith("- "):
+            item = inline_format(ln[2:].strip())
+
+            if in_ol:
+                if not html_out or not html_out[-1].endswith("</li>"):
+                    # Fallback: if can't nest cleanly, treat as separate UL
+                    close_lists()
+                    html_out.append("<ul>")
+                    in_ul = True
+                    html_out.append(f"<li>{item}</li>")
+                    continue
+
+                # Open nested ul inside last li by rewriting the last li line
+                last = html_out.pop()
+                # last is "<li>...</li>"
+                last_open = last[:-5]  # strip "</li>"
+                if not in_nested_ul:
+                    html_out.append(last_open + "<ul>")
+                    in_nested_ul = True
+                else:
+                    html_out.append(last_open)
+
+                html_out.append(f"<li>{item}</li>")
+                continue
+
+            # Top-level UL
+            if in_ol:
+                html_out.append("</ol>")
+                in_ol = False
+
+            if not in_ul:
+                html_out.append("<ul>")
+                in_ul = True
+
+            html_out.append(f"<li>{item}</li>")
+            continue
+
+        # Paragraph
+        close_lists()
+        html_out.append(f"<p>{inline_format(ln)}</p>")
+
+    # Finalize: if nested UL is open, close it and close the parent LI properly
+    if in_nested_ul:
+        html_out.append("</ul></li>")
+        in_nested_ul = False
+
+    close_lists()
+    return "\n".join(html_out)
 
 def build_summary_epub(
     metadata: dict,
@@ -62,24 +156,20 @@ def build_summary_epub(
 
     labels = OUTPUT_LABELS.get(language, OUTPUT_LABELS["en"])
     title = metadata.get("title") or "Untitled"
-    escaped_title = escape(title)
-    book.set_title(f"{title} — {labels['suffix']}")
-    book.set_language(language)
-
     authors = metadata.get("authors") or []
+    authors_str = ", ".join(authors) if authors else ""
     for a in authors:
         book.add_author(a)
+    
+    book.set_title(f"{title} de {authors_str} — Resumen")
 
     # Intro page
-    intro = epub.EpubHtml(title=labels["intro_title"], file_name="intro.xhtml", lang=language)
-    intro.content = (
-        f"<h1>{escape(labels['intro_heading'])}</h1>"
-        f"<p>{escape(labels['book_label'])}: {escaped_title}</p>"
-    )
+    intro = epub.EpubHtml(title="Overview", file_name="intro.xhtml", lang="es")
+    intro.content = f"<h1>Introducción</h1><p>Libro: {title}</p><p>Autores(s): {authors_str}</p>"
     book.add_item(intro)
 
     spine = ["nav", intro]
-    toc = [epub.Link("intro.xhtml", labels["intro_title"], "intro")]
+    toc = [epub.Link("intro.xhtml", "Introducción", "intro")]
 
     for i, ch in enumerate(chapter_summaries, start=1):
         chap_title = ch["title"]
@@ -89,7 +179,7 @@ def build_summary_epub(
         page = epub.EpubHtml(
             title=chap_title,
             file_name=f"summary_{i:03d}.xhtml",
-            lang=language,
+            lang="es",
         )
         page.content = f"<h2>{escaped_chap_title}</h2>\n{html}"
         book.add_item(page)
